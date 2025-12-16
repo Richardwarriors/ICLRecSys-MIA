@@ -74,7 +74,7 @@ def main(models, datasets, num_seeds, positions, all_shots):
         all_member_list.append(required_for_mem)
         all_nonmember_list.append(required_for_nonmem)
 
-        save_path = f"../results/semantic/ml1m/{params['model']}/{params['position']}/{params['num_shots']}_shots/"
+        save_path = f"../results/semantic/{params['dataset']}/{params['model']}/{params['position']}/{params['num_shots']}_shots/"
         os.makedirs(save_path, exist_ok=True)
 
         with open(os.path.join(save_path, 'member.pkl'), "wb") as file:
@@ -108,11 +108,15 @@ def repeat(params, member_sentences, test_sentence, semantic_model):
     return_sentence = continue_generate(input_to_model,query_sentence,params["model"])
     print(f"return_sentence: {return_sentence}")
 
-    movie_list = re.findall(r'^\s*\d+\.\s*(.+)$', return_sentence, flags=re.MULTILINE)
+    #movie_list = re.findall(r'^\s*\d+\.\s*(.+)$', return_sentence, flags=re.MULTILINE)
+    movie_list = re.findall(r'^\s*\d+\.?\s+(.+)$',return_sentence,flags=re.MULTILINE)
     print(f"movie_list: {movie_list}")
 
     hist_list = [movie.strip() for movie in hist_list.split('|')]
     print(f"interaction_list: ", hist_list)
+
+    if len(movie_list) == 0 or len(hist_list) == 0:
+        return 0
 
     with torch.no_grad():
         interaction_embeddings = []
