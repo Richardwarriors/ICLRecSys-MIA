@@ -21,7 +21,9 @@ def main(models, datasets, num_seeds, positions, all_shots):
     default_params = {
         "conditioned_on_correct_classes": True,
     }
+    current_date = datetime.now().strftime('%Y-%m-%d')
 
+    # list of all experiment parameters to run
     all_params = []
     for model in models:
         for dataset in datasets:
@@ -79,16 +81,26 @@ def prepare_data(params):
     return random_sampling(prompted_sentences, 1000)
 
 def inquiry(params, member_sentences, test_sentence):
-    match = re.search(r'The user with id (\d+)', test_sentence)
-    if match:
-        user_id = int(match.group(1))
+    #user = re.search(r'The user with id (\d+)', test_sentence)
+    watched_content = re.search(r"watched\s+(.*?)\s+and based on", test_sentence)
+
+
+    #if user:
+    #    user_id = int(user.group(1))
+    #else:
+    #    return None
+
+    if watched_content:
+        watched_content = watched_content.group(1)
     else:
         return None
 
-    query_sentence = f"Have you seen the user with id {user_id} before? Please answer one word: Yes or No"
+    query_sentence = f"Have you seen the user interacted {watched_content} before? Please answer one word: Yes or No"
+    #print(f"query_sentence: {query_sentence}")
     input_to_model = construct_prompt_omit(params, member_sentences, query_sentence)
     print(f"input_to_model: {input_to_model}")
     print(f"query_sentence: {query_sentence}")
+    #return_idx = query_ollama(input_to_model, params['model'])
     return_idx = query_ollama_chat(input_to_model,  query_sentence, params['model'])
     return return_idx
 
@@ -112,9 +124,10 @@ def query_ollama_chat(prompt_setup, prompt_question, model, max_token = 2, tempe
         response.raise_for_status()
         data = response.json()
         raw_output = data.get("message", {}).get("content", "").strip().lower()
+        print(f"[Ollama chat output]: {raw_output}")
 
         raw_output = raw_output.split()[0].strip(",.?!")
-        print(f"[Ollama chat output]: {raw_output}")
+        #print(f"[Ollama chat output]: {raw_output}")
 
         if raw_output.startswith("yes"):
             return 1
@@ -128,9 +141,10 @@ def query_ollama_chat(prompt_setup, prompt_question, model, max_token = 2, tempe
         print(f"[Error] Request to Ollama chat API failed: {e}")
         return -1
 
-
 def construct_prompt_omit(params, train_sentences, query_sentence):
     prompt = params.get("prompt_prefix", "")
+    #prompt += "\n".join(train_sentences) + "\n" + query_sentence
+    #for i in range(params["num_shots"]):
     prompt += "\n".join(train_sentences)
     return prompt
 
