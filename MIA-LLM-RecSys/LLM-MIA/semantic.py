@@ -2,13 +2,13 @@ import sys
 import os
 import re
 import argparse
-from datetime import datetime
 import numpy as np
 import pickle
 import random
 import requests
 import json
 from copy import deepcopy
+import torch
 from sentence_transformers import SentenceTransformer, util
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -19,9 +19,8 @@ from utils import (
 )
 
 def main(models, datasets, num_seeds, positions, all_shots):
-    default_params = {
-        "conditioned_on_correct_classes": True,
-    }
+
+    default_params = {}
 
     all_params = []
     for model in models:
@@ -42,10 +41,13 @@ def main(models, datasets, num_seeds, positions, all_shots):
     all_member_list = []
     all_nonmember_list = []
 
-    semantic_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    #semantic_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    semantic_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device="cuda")
+    print("Embedding model device:", semantic_model.device)
 
     for param_index, params in enumerate(all_params):
         prompt_subset = prepare_data(params)
+        #print(f"prompt_subset: {prompt_subset}")
 
         member_pool = prompt_subset[:len(prompt_subset)//2]
         nonmember_pool = prompt_subset[len(prompt_subset)//2:]
@@ -53,10 +55,14 @@ def main(models, datasets, num_seeds, positions, all_shots):
         member_sentences = random.sample(member_pool, params['num_shots'])
 
         target_sentence = member_sentences[-1] if params['position'] == 'end' else member_sentences[0]
+
         nonmember_sentences = random.sample(nonmember_pool, params['num_shots'])
         nontarget_sentence = nonmember_sentences[0]
 
-        required_for_mem = repeat(params, member_sentences, target_sentence,semantic_model)
+        #print(f"member_sentences: {member_sentences}")
+        #print(f"target_sentence: {target_sentence}")
+
+        required_for_mem = repeat(params, member_sentences, target_sentence, semantic_model)
         if required_for_mem is None:
             continue
 
@@ -68,7 +74,7 @@ def main(models, datasets, num_seeds, positions, all_shots):
         all_member_list.append(required_for_mem)
         all_nonmember_list.append(required_for_nonmem)
 
-        save_path = f"../results/semantic/{params['model']}/{params['position']}/{params['num_shots']}_shots/"
+        save_path = f"../results/semantic/ml1m/{params['model']}/{params['position']}/{params['num_shots']}_shots/"
         os.makedirs(save_path, exist_ok=True)
 
         with open(os.path.join(save_path, 'member.pkl'), "wb") as file:
@@ -82,46 +88,56 @@ def prepare_data(params):
     np.random.seed(params["seed"])
     return random_sampling(prompted_sentences, 1000)
 
-def repeat(params, member_sentences, test_sentence,semantic_model):
-    user_match = re.search(r'The user with id (\d+)', test_sentence)
-    rec_match = re.search(r'watched (.+?) and based on', test_sentence)
-    if user_match and rec_match:
-        user_id = int(user_match.group(1))
-        interaction_list = rec_match.group(1)
+def repeat(params, member_sentences, test_sentence, semantic_model):
+    hist_match = re.search(r"watched\s+(.*?)\s+and based on his or her watched", test_sentence)
+    if hist_match:
+        hist_list = hist_match.group(1)
     else:
         return None
-    query_sentence = f"Please recommend top-10 movies with descending order for {user_id}? Only give movie name with a list and not give any description."
+
+    query_sentence = (
+        f"The user has watched the following movies: {hist_list}. "
+        "Based on this watch history, please recommend the top 10 movies "
+        "the user is most likely to watch next. "
+        "Format the output as a numbered list of movie titles only. "
+        "Do not include descriptions, dates, or any other text."
+    )
 
     input_to_model = construct_prompt_cut(params, member_sentences, query_sentence)
     print(f"input_to_model: {input_to_model}")
     return_sentence = continue_generate(input_to_model,query_sentence,params["model"])
     print(f"return_sentence: {return_sentence}")
 
-    movie_list = re.findall(r'\d+\.\s+(.*)', return_sentence)
-
+    movie_list = re.findall(r'^\s*\d+\.\s*(.+)$', return_sentence, flags=re.MULTILINE)
     print(f"movie_list: {movie_list}")
 
-    print(f"interaction_list: ", interaction_list)
-    print(type(interaction_list))
-    interaction_list = [movie.strip() for movie in interaction_list.split('|')]
-    interaction_embeddings = []
-    print(f"interaction_list length: {len(interaction_list)}")
-    for movie in list(interaction_list):
-        embedding = semantic_model.encode(movie, convert_to_tensor=True)
-        interaction_embeddings.append(embedding)
-    print(f"interaction_embedding length: ", len(interaction_embeddings))
+    hist_list = [movie.strip() for movie in hist_list.split('|')]
+    print(f"interaction_list: ", hist_list)
 
-    semantic_sim = 0
-    for i in range(len(movie_list)):
-        temp = 0
-        embedding_movie = semantic_model.encode(movie_list[i], convert_to_tensor=True)
-        for j in range(len(interaction_embeddings)):
-            temp += util.pytorch_cos_sim(embedding_movie, interaction_embeddings[j]).item()
-        semantic_sim += (temp/len(interaction_embeddings))
-    semantic_sim = semantic_sim / len(movie_list)
+    with torch.no_grad():
+        interaction_embeddings = []
+        for movie in hist_list:
+            embedding = semantic_model.encode(movie, convert_to_tensor=True)
+            interaction_embeddings.append(embedding)
+
+        recommendation_embeddings = []
+        for movie in movie_list:
+            embedding = semantic_model.encode(movie, convert_to_tensor=True)
+            recommendation_embeddings.append(embedding)
+
+    # interaction mean embedding
+    interaction_tensor = torch.stack(interaction_embeddings).to(semantic_model.device)  # [n, d]
+    interaction_mean = interaction_tensor.mean(dim=0)  # [d]
+
+    # recommendation mean embedding
+    recommendation_tensor = torch.stack(recommendation_embeddings).to(semantic_model.device)  # [m, d]
+    recommendation_mean = recommendation_tensor.mean(dim=0)  # [d]
+
+    semantic_sim = util.cos_sim(interaction_mean,recommendation_mean).item()
+
     return semantic_sim
 
-def continue_generate(prompt_setup, prompt_question, model, max_token = 1000, temperature=0.3):
+def continue_generate(prompt_setup, prompt_question, model, max_token = 256, temperature=0.0):
     url = "http://localhost:11434/api/chat"
     payload = {
         "model": model,
