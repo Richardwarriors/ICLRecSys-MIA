@@ -18,10 +18,7 @@ from utils import (
 )
 
 def main(models, datasets, num_seeds, positions, all_shots):
-    default_params = {
-        "conditioned_on_correct_classes": True,
-    }
-    current_date = datetime.now().strftime('%Y-%m-%d')
+    default_params = {}
 
     # list of all experiment parameters to run
     all_params = []
@@ -48,10 +45,12 @@ def main(models, datasets, num_seeds, positions, all_shots):
         member_pool = prompt_subset[:len(prompt_subset)//2]
         nonmember_pool = prompt_subset[len(prompt_subset)//2:]
 
+        random.seed(params["seed"])
         member_sentences = random.sample(member_pool, params['num_shots'])
+        nonmember_sentences = random.sample(nonmember_pool, params['num_shots'])
 
         target_sentence = member_sentences[-1] if params['position'] == 'end' else member_sentences[0]
-        nonmember_sentences = random.sample(nonmember_pool, params['num_shots'])
+
         nontarget_sentence = nonmember_sentences[0]
 
         required_for_mem = inquiry(params, member_sentences, target_sentence)
@@ -77,8 +76,7 @@ def main(models, datasets, num_seeds, positions, all_shots):
 def prepare_data(params):
     print("\nExperiment name:", params["expr_name"])
     prompted_sentences = load_dataset(params)
-    np.random.seed(params["seed"])
-    return random_sampling(prompted_sentences, 1000)
+    return prompted_sentences
 
 def inquiry(params, member_sentences, test_sentence):
     if params['dataset'] == 'ml1m':
@@ -90,7 +88,7 @@ def inquiry(params, member_sentences, test_sentence):
 
         query_sentence = f"Have you seen the user interacted {watched_content} before? Please answer one word: Yes or No"
         #print(f"query_sentence: {query_sentence}")
-        input_to_model = construct_prompt_omit(params, member_sentences, query_sentence)
+        input_to_model = construct_prompt_omit(params, member_sentences)
         print(f"input_to_model: {input_to_model}")
         print(f"query_sentence: {query_sentence}")
         #return_idx = query_ollama(input_to_model, params['model'])
@@ -104,7 +102,7 @@ def inquiry(params, member_sentences, test_sentence):
             return None
 
         query_sentence = f"Have you seen the user interacted {beauty_content} before? Please answer one word: Yes or No"
-        input_to_model = construct_prompt_omit(params, member_sentences, query_sentence)
+        input_to_model = construct_prompt_omit(params, member_sentences)
         print(f"input_to_model: {input_to_model}")
         print(f"query_sentence: {query_sentence}")
         #return_idx = query_ollama(input_to_model, params['model'])
