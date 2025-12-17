@@ -52,15 +52,14 @@ def main(models, datasets, num_seeds, positions, all_shots):
         member_pool = prompt_subset[:len(prompt_subset)//2]
         nonmember_pool = prompt_subset[len(prompt_subset)//2:]
 
+        random.seed(params["seed"])
         member_sentences = random.sample(member_pool, params['num_shots'])
+        nonmember_sentences = random.sample(nonmember_pool, params['num_shots'])
 
         target_sentence = member_sentences[-1] if params['position'] == 'end' else member_sentences[0]
 
-        nonmember_sentences = random.sample(nonmember_pool, params['num_shots'])
         nontarget_sentence = nonmember_sentences[0]
 
-        #print(f"member_sentences: {member_sentences}")
-        #print(f"target_sentence: {target_sentence}")
 
         required_for_mem = repeat(params, member_sentences, target_sentence, semantic_model)
         if required_for_mem is None:
@@ -85,8 +84,7 @@ def main(models, datasets, num_seeds, positions, all_shots):
 def prepare_data(params):
     print("\nExperiment name:", params["expr_name"])
     prompted_sentences = load_dataset(params)
-    np.random.seed(params["seed"])
-    return random_sampling(prompted_sentences, 1000)
+    return prompted_sentences
 
 def repeat(params, member_sentences, test_sentence, semantic_model):
     hist_match = re.search(r"watched\s+(.*?)\s+and based on his or her watched", test_sentence)
