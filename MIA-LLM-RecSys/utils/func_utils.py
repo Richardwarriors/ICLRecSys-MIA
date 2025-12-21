@@ -1,7 +1,6 @@
 import numpy as np
 from copy import deepcopy
 import os
-from transformers import GPT2Tokenizer
 
 ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
 SAVE_DIR = os.path.join(ROOT_DIR, 'saved_results')
@@ -11,6 +10,7 @@ if not os.path.isdir(SAVE_DIR):
 
 
 def random_sampling(sentences, num):
+    """randomly sample subset """
     if num > len(sentences):
         assert False, f"you tried to randomly sample {num}, which is more than the total size of the pool {len(sentences)}"
     idxs = np.random.choice(len(sentences), size=num, replace=False)
