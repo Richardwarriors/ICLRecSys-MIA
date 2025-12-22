@@ -5,28 +5,27 @@ import numpy as np
 import os
 from copy import deepcopy
 
-'''
 def load_ml1m():
     prompt_sentences = []
-    with open(f"../data/processed_ml-1m/pretrained_ml1m.txt", "r") as prompt_data:
+    with open(f"../processed_ml-1m/prompt_ml1m.txt", "r") as prompt_data:
         for line in prompt_data:
             prompt_sentences.append(line)
     return prompt_sentences
 
 def load_beauty():
     prompt_sentences = []
-    with open(f"../data/Beauty/prompt_Beauty.txt", "r") as prompt_data:
+    with open(f"../Beauty/prompt_Beauty.txt", "r") as prompt_data:
         for line in prompt_data:
             prompt_sentences.append(line)
     return prompt_sentences
 
 def load_book():
     prompt_sentences = []
-    with open(f"../data/Book/prompt_Book.txt", "r") as prompt_data:
+    with open(f"../Book/prompt_Book.txt", "r") as prompt_data:
         for line in prompt_data:
             prompt_sentences.append(line)
     return prompt_sentences
-'''
+
 def load_pretrained_dataset(params):
     if params["dataset"] == "ml1m":
         prompt_sentences = load_ml1m()

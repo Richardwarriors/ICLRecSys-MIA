@@ -8,7 +8,7 @@ import json
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from utils import (
+from utils.pretrained_utils import (
     load_pretrained_dataset,
 )
 
