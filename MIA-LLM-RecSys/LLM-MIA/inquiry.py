@@ -2,8 +2,6 @@ import sys
 import os
 import re
 import argparse
-from datetime import datetime
-import numpy as np
 import pickle
 import random
 from copy import deepcopy
@@ -14,7 +12,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from utils import (
     load_dataset,
-    random_sampling,
 )
 
 def main(models, datasets, num_seeds, positions, all_shots):
@@ -100,8 +97,21 @@ def inquiry(params, member_sentences, test_sentence):
             beauty_content = beauty_content.group(1)
         else:
             return None
-
         query_sentence = f"Have you seen the user interacted {beauty_content} before? Please answer one word: Yes or No"
+        input_to_model = construct_prompt_omit(params, member_sentences)
+        print(f"input_to_model: {input_to_model}")
+        print(f"query_sentence: {query_sentence}")
+        #return_idx = query_ollama(input_to_model, params['model'])
+        return_idx = query_ollama_chat(input_to_model,  query_sentence, params['model'])
+        return return_idx
+    elif params['dataset'] == 'book':
+        book_content = re.search(r"bought\s+(.*?)\s+and based on", test_sentence)
+        if book_content:
+            book_content = book_content.group(1)
+        else:
+            return None
+        query_sentence = f"Have you seen the user interacted {book_content} before? Please answer one word: Yes or No"
+        #print(f"query_sentence: {query_sentence}")
         input_to_model = construct_prompt_omit(params, member_sentences)
         print(f"input_to_model: {input_to_model}")
         print(f"query_sentence: {query_sentence}")
