@@ -2,8 +2,7 @@ import sys
 import os
 import re
 import argparse
-from datetime import datetime
-import numpy as np
+import torch
 import pickle
 import random
 import requests
@@ -16,17 +15,17 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from utils import (
     load_dataset,
-    random_sampling,
 )
 
-def main(models, datasets, num_seeds, positions, all_shots):
-    default_params = {
-        "conditioned_on_correct_classes": True,
-    }
+def main(models, datasets, num_seeds, positions, all_shots,poison_num):
 
+    default_params = {}
+
+    # list of all experiment parameters to run
     all_params = []
     for model in models:
         for dataset in datasets:
+            dataset_primary = load_dataset_primary(dataset)
             for position in positions:
                 for num_shots in all_shots:
                     for seed in range(num_seeds):
@@ -39,11 +38,14 @@ def main(models, datasets, num_seeds, positions, all_shots):
                         p["expr_name"] = f"{p['dataset']}_{p['model']}_subsample_seed{p['seed']}"
                         all_params.append(p)
 
+    # Load the model once
 
     all_member_list = []
     all_nonmember_list = []
 
+
     semantic_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    #semantic_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device="cuda")
 
     for param_index, params in enumerate(all_params):
         prompt_subset = prepare_data(params)
@@ -51,99 +53,237 @@ def main(models, datasets, num_seeds, positions, all_shots):
         member_pool = prompt_subset[:len(prompt_subset)//2]
         nonmember_pool = prompt_subset[len(prompt_subset)//2:]
 
+        random.seed(params["seed"])
         member_sentences = random.sample(member_pool, params['num_shots'])
+        nonmember_sentences = random.sample(nonmember_pool, params['num_shots'])
 
         target_sentence = member_sentences[-1] if params['position'] == 'end' else member_sentences[0]
-        nonmember_sentences = random.sample(nonmember_pool, params['num_shots'])
         nontarget_sentence = nonmember_sentences[0]
 
-        required_for_mem = posion(params, member_sentences, target_sentence,semantic_model)
+        required_for_mem = posion(params, member_sentences, target_sentence,semantic_model,dataset_primary,poison_num)
         if required_for_mem is None:
             continue
 
         print(100 * '-')
-        required_for_nonmem = posion(params, member_sentences, nontarget_sentence,semantic_model)
+        required_for_nonmem = posion(params, member_sentences, nontarget_sentence,semantic_model,dataset_primary,poison_num)
         if required_for_nonmem is None:
             continue
 
         all_member_list.append(required_for_mem)
         all_nonmember_list.append(required_for_nonmem)
 
-        save_path = f"../results/poision/poision_5/{params['model']}/{params['position']}/{params['num_shots']}_shots/"
+        save_path = f"../results/poison/{params['dataset']}/{poison_num}/{params['model']}/{params['position']}/{params['num_shots']}_shots/"
         os.makedirs(save_path, exist_ok=True)
 
         with open(os.path.join(save_path, 'member.pkl'), "wb") as file:
             pickle.dump(all_member_list, file)
         with open(os.path.join(save_path, 'nonmember.pkl'), "wb") as file:
-            pickle.dump(all_nonmember_list, file)
+             pickle.dump(all_nonmember_list, file)
+
+
+def load_dataset_primary(dataset_name):
+    """
+    Load dataset-specific primary item list.
+    """
+    if dataset_name.lower() == "beauty":
+        file_path = "../data/Beauty/asin_title_map.csv"
+        beauty_df = pd.read_csv(file_path)
+        beauty_dataset_primary = beauty_df['clean_title'].dropna().tolist()
+        return beauty_dataset_primary
+    elif dataset_name.lower() == 'ml1m':
+        file_path = "../data/IMDB/title.basics.tsv"
+        IMDB = pd.read_csv(file_path, sep="\t", low_memory=False)
+        IMDB_dataset_primary = list(IMDB['primaryTitle'].dropna())
+        return IMDB_dataset_primary
+    elif dataset_name.lower() == 'book':
+        file_path = "../data/Book/asin_title_map.csv"
+        book_df = pd.read_csv(file_path)
+        book_dataset_primary = book_df['clean_title'].dropna().tolist()
+        return book_dataset_primary
+    else:
+        raise ValueError(f"Unknown dataset: {dataset_name}")
 
 def prepare_data(params):
     print("\nExperiment name:", params["expr_name"])
     prompted_sentences = load_dataset(params)
-    np.random.seed(params["seed"])
-    return random_sampling(prompted_sentences, 1000)
+    return prompted_sentences
 
-def posion(params, member_sentences, test_sentence,semantic_model):
-    user_match = re.search(r'The user with id (\d+)', test_sentence)
-    rec_match = re.search(r'watched (.+?) and based on', test_sentence)
-    if user_match and rec_match:
-        user_id = int(user_match.group(1))
-        interaction_list = rec_match.group(1)
+def posion(params, member_sentences, test_sentence,semantic_model,dataset_primary, poison_number):
+    if params["dataset"] == "ml1m":
+        int_match = re.search(r'watched (.+?) and based on', test_sentence)
+        rec_match = re.search(r'in the following:\s*(.+)$', test_sentence, flags=re.IGNORECASE)
+        if int_match and rec_match:
+            interaction_list = int_match.group(1).split('|')
+            rec_list = rec_match.group(1)
+            print(f"interaction_list:{interaction_list}")
+            print(f"rec_list:{rec_list}")
+        else:
+            return None
+
+        IMDB_sampled = random.sample(dataset_primary, 1000)
+
+        IMDB_sampled_embeddings = semantic_model.encode(IMDB_sampled, convert_to_tensor=True)
+        selected_movies = random.sample(interaction_list, poison_number)
+
+
+
+        for movie in selected_movies:
+            movie_embedding = semantic_model.encode(movie, convert_to_tensor=True)
+
+            cos_scores = util.pytorch_cos_sim(movie_embedding, IMDB_sampled_embeddings)[0]
+
+            best_idx = cos_scores.argmax().item()
+            replacement_movie = IMDB_sampled[best_idx]
+
+            movie_idx = interaction_list.index(movie)
+            interaction_list[movie_idx] = replacement_movie
+
+            print(f"Replaced '{movie}' ➝ '{replacement_movie}'")
+
+        new_watched_str = '|'.join(interaction_list)
+        query_sentence = (
+            f"The user has watched the following movies: {new_watched_str}. "
+            "Based on this watch history, please recommend the top 10 movies with descending order"
+            "the user is most likely to watch next. "
+            "Format the output as a numbered list of movie titles only. "
+            "Do not include descriptions, dates, or any other text."
+        )
+
+        input_to_model = construct_prompt_cut(params, member_sentences, query_sentence)
+        print(f"input_to_model: {input_to_model}")
+
+        base_sentence = continue_generate(input_to_model, query_sentence, params["model"])
+        print(f"return_sentence: {base_sentence}")
+
+        #poison_movie_list = re.findall(r'\d+\.\s+(.*)', base_sentence)
+        poison_movie_list = re.findall(r'^\s*\d+\.?\s+(.+)$',base_sentence,flags=re.MULTILINE)
+        poison_list = "|".join(poison_movie_list)
+        print(f"poison_movie_list: {poison_movie_list}")
+
+        if len(poison_movie_list) == 0 or len(rec_list) == 0:
+            return 0
+
+        original_rec = semantic_model.encode(rec_list, convert_to_tensor=True)
+        poision_rec = semantic_model.encode(poison_list, convert_to_tensor=True)
+
+        semantic_gap = util.pytorch_cos_sim(original_rec, poision_rec).item()
+
+        return semantic_gap
+    elif params["dataset"] == "beauty":
+        user_match = re.search(r'The user with id (\d+)', test_sentence)
+        int_match = re.search(r'bought (.+?) and based on', test_sentence)
+        rec_match = re.search(r'in the following:\s*(.+)$', test_sentence, flags=re.IGNORECASE)
+        if user_match and int_match and rec_match:
+            user_id = int(user_match.group(1))
+            interaction_list = int_match.group(1).split('|')
+            rec_list = rec_match.group(1)
+            print(f"interaction_list:{interaction_list}")
+            print(f"rec_list:{rec_list}")
+        else:
+            return None
+
+        beauty_sampled = random.sample(dataset_primary, 1000)
+        beauty_sampled_embeddings = semantic_model.encode(beauty_sampled, convert_to_tensor=True)
+        selected_beauty = random.sample(interaction_list, poison_number)
+
+        for beauty in selected_beauty:
+            beauty_embedding = semantic_model.encode(beauty, convert_to_tensor=True)
+
+            cos_scores = util.pytorch_cos_sim(beauty_embedding, beauty_sampled_embeddings)[0]
+
+            best_idx = cos_scores.argmax().item()
+            replacement_beauty = beauty_sampled[best_idx]
+
+            beauty_idx = interaction_list.index(beauty)
+            interaction_list[beauty_idx] = replacement_beauty
+
+            print(f"Replaced '{beauty}' ➝ '{replacement_beauty}'")
+
+        new_bought_str = '|'.join(interaction_list)
+        query_sentence = (
+            f"The user has bought the following beauty product: {new_bought_str}. "
+            "Based on this purchased history, please recommend the top 10 beauty products with descending order"
+            "the user is most likely to buy next. "
+            "Format the output as a numbered list of beauty product titles only. "
+            "Do not include descriptions, dates, or any other text."
+        )
+
+        input_to_model = construct_prompt_cut(params, member_sentences, query_sentence)
+        print(f"input_to_model: {input_to_model}")
+
+        base_sentence = continue_generate(input_to_model, query_sentence, params["model"])
+        print(f"return_sentence: {base_sentence}")
+
+        poison_beauty_list = re.findall(r'\d+\.\s+(.*)', base_sentence)
+        poison_list = "|".join(poison_beauty_list)
+        print(f"poison_beauty_list: {poison_beauty_list}")
+
+        original_rec = semantic_model.encode(rec_list, convert_to_tensor=True)
+        poision_rec = semantic_model.encode(poison_list, convert_to_tensor=True)
+
+        semantic_gap = util.pytorch_cos_sim(original_rec, poision_rec).item()
+
+        return semantic_gap
+    elif params["dataset"] == "book":
+        user_match = re.search(r'The user with id (\d+)', test_sentence)
+        int_match = re.search(r'bought these books (.+?) and based on', test_sentence)
+        rec_match = re.search(r'in the following:\s*(.+)$', test_sentence, flags=re.IGNORECASE)
+        if user_match and int_match and rec_match:
+            user_id = int(user_match.group(1))
+            interaction_list = int_match.group(1).split('|')
+            rec_list = rec_match.group(1)
+            print(f"interaction_list:{interaction_list}")
+            print(f"rec_list:{rec_list}")
+        else:
+            return None
+
+        book_sampled = random.sample(dataset_primary, 1000)
+        book_sampled_embeddings = semantic_model.encode(book_sampled, convert_to_tensor=True)
+        selected_books = random.sample(interaction_list, poison_number)
+
+        for book in selected_books:
+            book_embedding = semantic_model.encode(book, convert_to_tensor=True)
+
+            cos_scores = util.pytorch_cos_sim(book_embedding, book_sampled_embeddings)[0]
+
+            best_idx = cos_scores.argmax().item()
+            replacement_book = book_sampled[best_idx]
+
+            book_idx = interaction_list.index(book)
+            interaction_list[book_idx] = replacement_book
+
+            print(f"Replaced '{book}' ➝ '{replacement_book}'")
+
+        new_bought_str = '|'.join(interaction_list)
+
+        query_sentence = (
+            f"The user has bought the following books: {new_bought_str}. "
+            "Based on this purchased history, please recommend the top 10 books with descending order"
+            "the user is most likely to buy next. "
+            "Format the output as a numbered list of book titles only. "
+            "Do not include descriptions, dates, or any other text."
+        )
+
+        input_to_model = construct_prompt_cut(params, member_sentences, query_sentence)
+        print(f"input_to_model: {input_to_model}")
+
+        base_sentence = continue_generate(input_to_model, query_sentence, params["model"])
+        print(f"return_sentence: {base_sentence}")
+
+        poison_book_list = re.findall(r'\d+\.\s+(.*)', base_sentence)
+        poison_list = "|".join(poison_book_list)
+        print(f"poison_book_list: {poison_book_list}")
+
+        original_rec = semantic_model.encode(rec_list, convert_to_tensor=True)
+        poision_rec = semantic_model.encode(poison_list, convert_to_tensor=True)
+
+        semantic_gap = util.pytorch_cos_sim(original_rec, poision_rec).item()
+
+        return semantic_gap
     else:
-        return None
-    query_sentence = f"Please recommend top-10 movies with descending order for {user_id}? Only give movie name with a list and not give any description."
-    input_to_model = construct_prompt_cut(params, member_sentences, query_sentence)
-    print(f"input_to_model: {input_to_model}")
+        raise Exception(f"Unknown dataset: {params['dataset']}")
 
-    base_sentence = continue_generate(input_to_model, query_sentence, params["model"])
-    print(f"return_sentence: {base_sentence}")
-
-    base_movie_list = re.findall(r'\d+\.\s+(.*)', base_sentence)
-    print(f"movie_list: {base_movie_list}")
-    if len(base_movie_list) == 0:
-        return None
-    print(f"interaction_list: ", interaction_list)
-    print(type(interaction_list))
-    interaction_list = [movie.strip() for movie in interaction_list.split('|')]
-    interaction_embeddings = []
-    print(f"interaction_list length: {len(interaction_list)}")
-    for movie in list(interaction_list):
-        embedding = semantic_model.encode(movie, convert_to_tensor=True)
-        interaction_embeddings.append(embedding)
-    print(f"interaction_embedding length: ", len(interaction_embeddings))
-    base_semantic_sim = 0
-    for i in range(len(base_movie_list)):
-        temp = 0
-        embedding_movie = semantic_model.encode(base_movie_list[i], convert_to_tensor=True)
-        for j in range(len(interaction_embeddings)):
-            temp += util.pytorch_cos_sim(embedding_movie, interaction_embeddings[j]).item()
-        base_semantic_sim += (temp / len(interaction_embeddings))
-    base_semantic_sim = base_semantic_sim / len(base_movie_list)
-
-    posion_number = 5
-    poison_input_to_model = construct_prompt_poison(params, member_sentences, test_sentence, query_sentence, semantic_model,posion_number)
-
-    poison_sentence = continue_generate(poison_input_to_model, query_sentence, params["model"])
-    print(f"poison_sentence: {poison_sentence}")
-
-    poison_movie_list = re.findall(r'\d+\.\s+(.*)', poison_sentence)
-    print(f"poison_movie_list: {poison_movie_list}")
-
-    if poison_movie_list == []:
-        return None
-    poision_change_semantic = 0
-    for i in range(len(base_movie_list)):
-        temp = 0
-        embedding_movie = semantic_model.encode(base_movie_list[i], convert_to_tensor=True)
-        for j in range(len(poison_movie_list)):
-            poision_embedding = semantic_model.encode(poison_movie_list[j], convert_to_tensor=True)
-            temp += util.pytorch_cos_sim(embedding_movie, poision_embedding).item()
-        poision_change_semantic += (temp / len(poison_movie_list))
-    poision_change_semantic = poision_change_semantic / len(base_movie_list)
-
-    return poision_change_semantic
-
-def continue_generate(prompt_setup, prompt_question, model, max_token = 1000, temperature=0.3):
+def continue_generate(prompt_setup, prompt_question, model, max_token = 256, temperature=0.0):
     url = "http://localhost:11434/api/chat"
     payload = {
         "model": model,
@@ -168,58 +308,10 @@ def continue_generate(prompt_setup, prompt_question, model, max_token = 1000, te
         print(f"[Error] Request to Ollama chat API failed: {e}")
         return -1
 
-def construct_prompt_cut(params, train_sentences, query_sentence):
+def construct_prompt_cut(params, member_sentence, query_sentence):
     prompt = params.get("prompt_prefix", "")
-    print(f"type of train_sentences: {type(train_sentences)}")
-    prompt += "\n".join(train_sentences) + "\n\n" + query_sentence
-    return prompt
-
-def construct_prompt_poison(params, train_sentences, test_sentence, query_sentence, semantic_model,poision_number):
-    prompt = params.get("prompt_prefix", "")
-
-    user_match = re.search(r'The user with id (\d+)', test_sentence)
-    interaction_match = re.search(r'watched (.+?) and based on', test_sentence)
-
-    if not (user_match and interaction_match):
-        return None
-
-    user_id = int(user_match.group(1))
-    interaction_list = interaction_match.group(1).split('|')
-
-    file_path = "../data/IMDB/title.basics.tsv"
-    IMDB = pd.read_csv(file_path, sep="\t", low_memory=False)
-    IMDB_dataset_primary = list(IMDB['primaryTitle'].dropna())
-    IMDB_sampled = random.sample(IMDB_dataset_primary, 1000)
-
-    IMDB_sampled_embeddings = semantic_model.encode(IMDB_sampled, convert_to_tensor=True)
-
-    selected_movies = random.sample(interaction_list, poision_number)
-
-    for movie in selected_movies:
-        movie_embedding = semantic_model.encode(movie, convert_to_tensor=True)
-
-        cos_scores = util.pytorch_cos_sim(movie_embedding, IMDB_sampled_embeddings)[0]
-
-        best_idx = cos_scores.argmax().item()
-        replacement_movie = IMDB_sampled[best_idx]
-
-        movie_idx = interaction_list.index(movie)
-        interaction_list[movie_idx] = replacement_movie
-
-        print(f"Replaced '{movie}' ➝ '{replacement_movie}'")
-
-    new_watched_str = '|'.join(interaction_list)
-
-    poisoned_prompt = (
-        f"The user with id {user_id} watched {new_watched_str} "
-        f"and based on his or her watched history, the top 10 recommended item with descending order is in the following: "
-    )
-
-    for i in range(len(train_sentences)):
-        if str(user_id) in train_sentences[i]:
-            train_sentences[i] = poisoned_prompt
-
-    prompt += "\n".join(train_sentences) + "\n\n" + query_sentence
+    print(f"type of member_sentence: {type(member_sentence)}")
+    prompt += "\n".join(member_sentence) + "\n\n" + query_sentence
     return prompt
 
 
@@ -227,18 +319,17 @@ def convert_to_list(items, is_int=False):
     return [int(s.strip()) if is_int else s.strip() for s in items.split(",")]
 
 if __name__ == "__main__":
-    random.seed(2025)
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", required=True)
     parser.add_argument("--datasets", required=True)
     parser.add_argument("--num_seeds", type=int, required=True)
     parser.add_argument("--all_shots", required=True)
     parser.add_argument("--positions", required=True)
+    parser.add_argument("--poison_num", type=int, required=True)
 
     args = vars(parser.parse_args())
     args["models"] = convert_to_list(args["models"])
     args["datasets"] = convert_to_list(args["datasets"])
     args["positions"] = convert_to_list(args["positions"])
     args["all_shots"] = convert_to_list(args["all_shots"], is_int=True)
-
     main(**args)
