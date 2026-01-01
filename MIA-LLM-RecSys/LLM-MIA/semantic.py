@@ -2,7 +2,6 @@ import sys
 import os
 import re
 import argparse
-import numpy as np
 import pickle
 import random
 import requests
@@ -15,7 +14,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from utils import (
     load_dataset,
-    random_sampling,
 )
 
 def main(models, datasets, num_seeds, positions, all_shots):
@@ -41,8 +39,8 @@ def main(models, datasets, num_seeds, positions, all_shots):
     all_member_list = []
     all_nonmember_list = []
 
-    #semantic_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-    semantic_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device="cuda")
+    semantic_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device='cuda')
+    #semantic_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device="cuda")
     print("Embedding model device:", semantic_model.device)
 
     for param_index, params in enumerate(all_params):
@@ -59,7 +57,6 @@ def main(models, datasets, num_seeds, positions, all_shots):
         target_sentence = member_sentences[-1] if params['position'] == 'end' else member_sentences[0]
 
         nontarget_sentence = nonmember_sentences[0]
-
 
         required_for_mem = repeat(params, member_sentences, target_sentence, semantic_model)
         if required_for_mem is None:
@@ -87,57 +84,165 @@ def prepare_data(params):
     return prompted_sentences
 
 def repeat(params, member_sentences, test_sentence, semantic_model):
-    hist_match = re.search(r"watched\s+(.*?)\s+and based on his or her watched", test_sentence)
-    if hist_match:
-        hist_list = hist_match.group(1)
+    if params['dataset'] == 'ml1m':
+        hist_match = re.search(r"watched\s+(.*?)\s+and based on his or her watched", test_sentence)
+        if hist_match:
+            hist_list = hist_match.group(1)
+        else:
+            return None
+
+        query_sentence = (
+            f"The user has watched the following movies: {hist_list}. "
+            "Based on this watch history, please recommend the top 10 movies with descending order"
+            "the user is most likely to watch next. "
+            "Format the output as a numbered list of movie titles only. "
+            "Do not include descriptions, dates, or any other text."
+        )
+
+        input_to_model = construct_prompt_cut(params, member_sentences, query_sentence)
+        print(f"input_to_model: {input_to_model}")
+        return_sentence = continue_generate(input_to_model,query_sentence,params["model"])
+        print(f"return_sentence: {return_sentence}")
+
+        #movie_list = re.findall(r'^\s*\d+\.\s*(.+)$', return_sentence, flags=re.MULTILINE)
+        movie_list = re.findall(r'^\s*\d+\.?\s+(.+)$',return_sentence,flags=re.MULTILINE)
+        print(f"movie_list: {movie_list}")
+
+        hist_list = [movie.strip() for movie in hist_list.split('|')]
+        print(f"interaction_list: ", hist_list)
+
+        if len(movie_list) == 0 or len(hist_list) == 0:
+            return 0
+
+        with torch.no_grad():
+            interaction_embeddings = []
+            for movie in hist_list:
+                embedding = semantic_model.encode(movie, convert_to_tensor=True)
+                interaction_embeddings.append(embedding)
+
+            recommendation_embeddings = []
+            for movie in movie_list:
+                embedding = semantic_model.encode(movie, convert_to_tensor=True)
+                recommendation_embeddings.append(embedding)
+
+        # interaction mean embedding
+        interaction_tensor = torch.stack(interaction_embeddings).to(semantic_model.device)  # [n, d]
+        interaction_mean = interaction_tensor.mean(dim=0)  # [d]
+
+        # recommendation mean embedding
+        recommendation_tensor = torch.stack(recommendation_embeddings).to(semantic_model.device)  # [m, d]
+        recommendation_mean = recommendation_tensor.mean(dim=0)  # [d]
+
+        semantic_sim = util.cos_sim(interaction_mean,recommendation_mean).item()
+
+        return semantic_sim
+    elif params['dataset'] == 'book':
+        hist_match = re.search(r"bought\s+(.*?)\s+and based on his or her purchased history", test_sentence)
+        if hist_match:
+            hist_list = hist_match.group(1)
+        else:
+            return None
+
+        query_sentence = (
+            f"The user has bought the following books: {hist_list}. "
+            "Based on this purchased history, please recommend the top 10 books with descending order"
+            "the user is most likely to read next. "
+            "Format the output as a numbered list of book titles only. "
+            "Do not include descriptions, dates, or any other text."
+        )
+
+        input_to_model = construct_prompt_cut(params, member_sentences, query_sentence)
+        print(f"input_to_model: {input_to_model}")
+        return_sentence = continue_generate(input_to_model, query_sentence, params["model"])
+        print(f"return_sentence: {return_sentence}")
+
+        # movie_list = re.findall(r'^\s*\d+\.\s*(.+)$', return_sentence, flags=re.MULTILINE)
+        book_list = re.findall(r'^\s*\d+\.?\s+(.+)$', return_sentence, flags=re.MULTILINE)
+        print(f"book_list: {book_list}")
+
+        hist_list = [book.strip() for book in hist_list.split('|')]
+        print(f"interaction_list: ", hist_list)
+
+        if len(book_list) == 0 or len(hist_list) == 0:
+            return 0
+
+        with torch.no_grad():
+            interaction_embeddings = []
+            for book in hist_list:
+                embedding = semantic_model.encode(book, convert_to_tensor=True)
+                interaction_embeddings.append(embedding)
+
+            recommendation_embeddings = []
+            for book in book_list:
+                embedding = semantic_model.encode(book, convert_to_tensor=True)
+                recommendation_embeddings.append(embedding)
+
+        # interaction mean embedding
+        interaction_tensor = torch.stack(interaction_embeddings).to(semantic_model.device)  # [n, d]
+        interaction_mean = interaction_tensor.mean(dim=0)  # [d]
+
+        # recommendation mean embedding
+        recommendation_tensor = torch.stack(recommendation_embeddings).to(semantic_model.device)  # [m, d]
+        recommendation_mean = recommendation_tensor.mean(dim=0)  # [d]
+
+        semantic_sim = util.cos_sim(interaction_mean, recommendation_mean).item()
+
+        return semantic_sim
+    elif params['dataset'] == 'beauty':
+        hist_match = re.search(r"bought\s+(.*?)\s+and based on his or her bought history", test_sentence)
+        if hist_match:
+            hist_list = hist_match.group(1)
+        else:
+            return None
+
+        query_sentence = (
+            f"The user has bought the following beauty product: {hist_list}. "
+            "Based on this purchased history, please recommend the top 10 beauty products with descending order"
+            "the user is most likely to buy next. "
+            "Format the output as a numbered list of beauty product titles only. "
+            "Do not include descriptions, dates, or any other text."
+        )
+
+        input_to_model = construct_prompt_cut(params, member_sentences, query_sentence)
+        print(f"input_to_model: {input_to_model}")
+        return_sentence = continue_generate(input_to_model, query_sentence, params["model"])
+        print(f"return_sentence: {return_sentence}")
+
+        # movie_list = re.findall(r'^\s*\d+\.\s*(.+)$', return_sentence, flags=re.MULTILINE)
+        beauty_list = re.findall(r'^\s*\d+\.?\s+(.+)$', return_sentence, flags=re.MULTILINE)
+        print(f"beauty_list: {beauty_list}")
+
+        hist_list = [beauty.strip() for beauty in hist_list.split('|')]
+        print(f"interaction_list: ", hist_list)
+
+        if len(beauty_list) == 0 or len(hist_list) == 0:
+            return 0
+
+        with torch.no_grad():
+            interaction_embeddings = []
+            for beauty in hist_list:
+                embedding = semantic_model.encode(beauty, convert_to_tensor=True)
+                interaction_embeddings.append(embedding)
+
+            recommendation_embeddings = []
+            for beauty in beauty_list:
+                embedding = semantic_model.encode(beauty, convert_to_tensor=True)
+                recommendation_embeddings.append(embedding)
+
+        # interaction mean embedding
+        interaction_tensor = torch.stack(interaction_embeddings).to(semantic_model.device)  # [n, d]
+        interaction_mean = interaction_tensor.mean(dim=0)  # [d]
+
+        # recommendation mean embedding
+        recommendation_tensor = torch.stack(recommendation_embeddings).to(semantic_model.device)  # [m, d]
+        recommendation_mean = recommendation_tensor.mean(dim=0)  # [d]
+
+        semantic_sim = util.cos_sim(interaction_mean, recommendation_mean).item()
+
+        return semantic_sim
     else:
-        return None
+        raise Exception(f"Unknown dataset: {params['dataset']}")
 
-    query_sentence = (
-        f"The user has watched the following movies: {hist_list}. "
-        "Based on this watch history, please recommend the top 10 movies "
-        "the user is most likely to watch next. "
-        "Format the output as a numbered list of movie titles only. "
-        "Do not include descriptions, dates, or any other text."
-    )
-
-    input_to_model = construct_prompt_cut(params, member_sentences, query_sentence)
-    print(f"input_to_model: {input_to_model}")
-    return_sentence = continue_generate(input_to_model,query_sentence,params["model"])
-    print(f"return_sentence: {return_sentence}")
-
-    #movie_list = re.findall(r'^\s*\d+\.\s*(.+)$', return_sentence, flags=re.MULTILINE)
-    movie_list = re.findall(r'^\s*\d+\.?\s+(.+)$',return_sentence,flags=re.MULTILINE)
-    print(f"movie_list: {movie_list}")
-
-    hist_list = [movie.strip() for movie in hist_list.split('|')]
-    print(f"interaction_list: ", hist_list)
-
-    if len(movie_list) == 0 or len(hist_list) == 0:
-        return 0
-
-    with torch.no_grad():
-        interaction_embeddings = []
-        for movie in hist_list:
-            embedding = semantic_model.encode(movie, convert_to_tensor=True)
-            interaction_embeddings.append(embedding)
-
-        recommendation_embeddings = []
-        for movie in movie_list:
-            embedding = semantic_model.encode(movie, convert_to_tensor=True)
-            recommendation_embeddings.append(embedding)
-
-    # interaction mean embedding
-    interaction_tensor = torch.stack(interaction_embeddings).to(semantic_model.device)  # [n, d]
-    interaction_mean = interaction_tensor.mean(dim=0)  # [d]
-
-    # recommendation mean embedding
-    recommendation_tensor = torch.stack(recommendation_embeddings).to(semantic_model.device)  # [m, d]
-    recommendation_mean = recommendation_tensor.mean(dim=0)  # [d]
-
-    semantic_sim = util.cos_sim(interaction_mean,recommendation_mean).item()
-
-    return semantic_sim
 
 def continue_generate(prompt_setup, prompt_question, model, max_token = 256, temperature=0.0):
     url = "http://localhost:11434/api/chat"
