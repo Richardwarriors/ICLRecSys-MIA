@@ -8,7 +8,6 @@ def main(path, dataset, model):
     with open(f"../pretrained_RecSys/{dataset}_test.txt", "r") as f:
         lines = f.readlines()
 
-    # 3. 安全检查（防止长度不一致 silent bug）
     assert len(member_data) == len(lines), (
         f"Length mismatch: member_data={len(member_data)}, lines={len(lines)}"
     )
