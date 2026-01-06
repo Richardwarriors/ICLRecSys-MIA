@@ -14,6 +14,10 @@ The implemented attack strategies include:
 
 The framework is **model-agnostic** and can be applied to any LLM that supports prompt-based inference.
 
+## Experimental Results for review
+
+For convenience, we provide the complete experimental results for **GPT-OSS (120B)** in a single spreadsheet file, `Experimental_Results-GPT-OSS_120B.xlsx`, located in the `results/` directory.
+
 ---
 
 ## Supported Language Models
