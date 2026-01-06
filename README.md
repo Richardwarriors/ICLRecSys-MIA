@@ -154,4 +154,5 @@ Similarly, the inquiry-based defense can be executed by replacing `inquiry.py` w
 ## Reproducibility Notes
 
 * All experiments are controlled using fixed random seeds.
+* For convenience, we provide the complete experimental results for **GPT-OSS (120B)** in a single spreadsheet file, `Experimental_Results-GPT-OSS_120B.xlsx`, located in the `results/` directory.
 
