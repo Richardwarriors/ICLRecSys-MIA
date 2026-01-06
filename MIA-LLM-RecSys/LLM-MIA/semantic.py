@@ -39,7 +39,7 @@ def main(models, datasets, num_seeds, positions, all_shots):
     all_member_list = []
     all_nonmember_list = []
 
-    semantic_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2',device='cuda')
+    semantic_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', device="cuda")
     #semantic_model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2", device="cuda")
     print("Embedding model device:", semantic_model.device)
 
@@ -57,6 +57,7 @@ def main(models, datasets, num_seeds, positions, all_shots):
         target_sentence = member_sentences[-1] if params['position'] == 'end' else member_sentences[0]
 
         nontarget_sentence = nonmember_sentences[0]
+
 
         required_for_mem = repeat(params, member_sentences, target_sentence, semantic_model)
         if required_for_mem is None:
@@ -240,8 +241,6 @@ def repeat(params, member_sentences, test_sentence, semantic_model):
         semantic_sim = util.cos_sim(interaction_mean, recommendation_mean).item()
 
         return semantic_sim
-    else:
-        raise Exception(f"Unknown dataset: {params['dataset']}")
 
 
 def continue_generate(prompt_setup, prompt_question, model, max_token = 256, temperature=0.0):
