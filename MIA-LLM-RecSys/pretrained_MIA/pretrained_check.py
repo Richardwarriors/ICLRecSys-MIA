@@ -8,7 +8,7 @@ import json
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from utils.pretrained_utils import (
+from utils import (
     load_pretrained_dataset,
 )
 
@@ -31,8 +31,6 @@ def main(models, datasets, num_seeds):
 
     for param_index, params in enumerate(all_params):
         prompt_subset = prepare_data(params)
-        print(len(prompt_subset))
-
 
         target_sentence = prompt_subset[params['seed']]
         required_for_mem = inquiry(params, target_sentence)
@@ -53,7 +51,7 @@ def prepare_data(params):
     return prompted_sentences
 
 def inquiry(params, test_sentence):
-    query_sentence = test_sentence
+    query_sentence = "UserID::CurrentInteractions is the following: " + test_sentence
     #print(f"query_sentence: {query_sentence}")
     input_to_model = construct_prompt_omit(params)
     print(f"input_to_model: {input_to_model}")
@@ -84,16 +82,7 @@ def query_ollama_chat(prompt_setup, prompt_question, model, max_token = 2, tempe
         raw_output = data.get("message", {}).get("content", "").strip().lower()
         print(f"[Ollama chat output]: {raw_output}")
 
-        raw_output = raw_output.split()[0].strip(",.?!")
-        #print(f"[Ollama chat output]: {raw_output}")
-
-        if raw_output.startswith("yes"):
-            return 1
-        elif raw_output.startswith("no"):
-            return 0
-        else:
-            print("[Warning] Unexpected response format.")
-            return -1
+        return raw_output
 
     except requests.RequestException as e:
         print(f"[Error] Request to Ollama chat API failed: {e}")
@@ -118,3 +107,4 @@ if __name__ == "__main__":
     args["datasets"] = convert_to_list(args["datasets"])
     print("DEBUG: args = ", args)
     main(**args)
+
