@@ -3,9 +3,6 @@ import argparse
 from pathlib import Path
 import numpy as np
 
-# -------------------------
-# 参数
-# -------------------------
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str, default='llama3')
 parser.add_argument("--dataset", type=str, default='ml1m')
@@ -54,7 +51,6 @@ def analyze(split: str):
                 else 0.0
             )
 
-            # 👉 目标：最大 Accuracy
             if acc > best_acc:
                 best_acc = acc
                 best_threshold = threshold
@@ -73,8 +69,5 @@ def analyze(split: str):
             f"ADV={advantage:.4f}"
         )
 
-# -------------------------
-# start / end
-# -------------------------
 analyze("start")
 
