@@ -46,7 +46,17 @@ def main(models, datasets, num_seeds, positions, all_shots):
         member_sentences = random.sample(member_pool, params['num_shots'])
         nonmember_sentences = random.sample(nonmember_pool, params['num_shots'])
 
-        target_sentence = member_sentences[-1] if params['position'] == 'end' else member_sentences[0]
+        if params['position'] == 'start':
+            target_sentence = member_sentences[0]
+        elif params['position'] == 'second':
+            target_sentence = member_sentences[1]
+        elif params['position'] == 'third':
+            target_sentence = member_sentences[2]
+        elif params['position'] == 'fourth':
+            target_sentence = member_sentences[3]
+        elif params['position'] == 'end':
+            target_sentence = member_sentences[-1]
+        #target_sentence = member_sentences[-1] if params['position'] == 'end' else member_sentences[0]
 
         nontarget_sentence = nonmember_sentences[0]
 
