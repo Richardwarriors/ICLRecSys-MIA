@@ -4,9 +4,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 
-# -------------------------------------------------
-# Load member / nonmember data
-# -------------------------------------------------
+
 def load_data(base_dir, dataset, poison_num, model, position, k):
     path = os.path.join(
         base_dir,
@@ -32,9 +30,6 @@ def load_data(base_dir, dataset, poison_num, model, position, k):
     return np.array(member), np.array(nonmember)
 
 
-# -------------------------------------------------
-# Compute metrics under a threshold
-# -------------------------------------------------
 def compute_metrics(member, nonmember, threshold):
     TP = np.sum(member >= threshold)
     FN = np.sum(member < threshold)
@@ -55,9 +50,7 @@ def compute_metrics(member, nonmember, threshold):
     return acc, advantage, f1
 
 
-# -------------------------------------------------
-# Sweep thresholds and collect curve
-# -------------------------------------------------
+
 def sweep_thresholds(member, nonmember, num_steps):
     thresholds = np.linspace(0, 1, num_steps)
 
@@ -82,11 +75,9 @@ def sweep_thresholds(member, nonmember, num_steps):
     return thresholds, np.array(adv_curve), best
 
 
-# -------------------------------------------------
-# Plot curves for ONE position (ACL-friendly)
-# -------------------------------------------------
+
 def plot_poisoning_adv_curve(thresholds, adv_dict, position, save_path):
-    plt.figure(figsize=(4.5, 3.2))  # ACL size
+    plt.figure(figsize=(4.5, 3.2))  
 
     for k, adv in adv_dict.items():
         plt.plot(
@@ -108,10 +99,6 @@ def plot_poisoning_adv_curve(thresholds, adv_dict, position, save_path):
 
     print(f"[Saved] {save_path}")
 
-
-# -------------------------------------------------
-# Main analysis logic
-# -------------------------------------------------
 def main(args):
     print("=" * 80)
     print(
@@ -148,7 +135,6 @@ def main(args):
                 f"F1={best['f1']:.4f}"
             )
 
-        # ---- plot ONE figure per position ----
         save_path = os.path.join(
             args.base_dir,
             args.dataset,
@@ -163,9 +149,6 @@ def main(args):
         )
 
 
-# -------------------------------------------------
-# Entry
-# -------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
