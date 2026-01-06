@@ -4,9 +4,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
-# -------------------------
-# 参数
-# -------------------------
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", type=str, default="gpt-oss:20b")
 parser.add_argument("--dataset", type=str, default="ml1m")
@@ -17,15 +15,11 @@ DATASET = args.dataset
 BASE_DIR = Path(f"./semantic/{DATASET}/{MODEL}")
 
 k_values = [1, 5, 10]
-thresholds = np.linspace(0.0, 1.0, 200)  # smooth curve
+thresholds = np.linspace(0.0, 1.0, 200)  
 
 
-# -------------------------
-# 画 semantic advantage 曲线（ACL-friendly）
-# -------------------------
 def plot_adv_curve(thresholds, adv_curves, split):
-    plt.figure(figsize=(4.5, 3.2))  # ACL single-column friendly
-
+    plt.figure(figsize=(4.5, 3.2))  
     for k, adv in adv_curves.items():
         plt.plot(
             thresholds,
@@ -48,16 +42,14 @@ def plot_adv_curve(thresholds, adv_curves, split):
     print(f"[Saved] {out_path}")
 
 
-# -------------------------
-# 主分析函数
-# -------------------------
+
 def analyze(split: str):
     print(f"\n===== {split.upper()} =====")
 
     adv_curves = {}
 
     for k in k_values:
-        # load data
+
         with open(BASE_DIR / split / f"{k}_shots" / "member.pkl", "rb") as f:
             member_data = np.array(pickle.load(f))
 
@@ -116,13 +108,9 @@ def analyze(split: str):
             f"Advantage={best_adv:.4f}"
         )
 
-    # ---- plot 1 / 5 / 10-shot in ONE figure ----
     plot_adv_curve(thresholds, adv_curves, split)
 
 
-# -------------------------
-# start / end
-# -------------------------
 if __name__ == "__main__":
     analyze("start")
     analyze("end")
