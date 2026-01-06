@@ -332,4 +332,5 @@ if __name__ == "__main__":
     args["datasets"] = convert_to_list(args["datasets"])
     args["positions"] = convert_to_list(args["positions"])
     args["all_shots"] = convert_to_list(args["all_shots"], is_int=True)
+    #args["poison_num"] = convert_to_list(args["poison_num"])
     main(**args)
