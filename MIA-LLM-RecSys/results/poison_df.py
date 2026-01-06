@@ -3,10 +3,6 @@ import pickle
 import numpy as np
 import os
 
-
-# -------------------------------------------------
-# Load member / nonmember data
-# -------------------------------------------------
 def load_data(base_dir, dataset, poison_num, model, position, k):
     path = os.path.join(
         base_dir,
@@ -32,9 +28,6 @@ def load_data(base_dir, dataset, poison_num, model, position, k):
     return np.array(member), np.array(nonmember)
 
 
-# -------------------------------------------------
-# Compute metrics under a threshold
-# -------------------------------------------------
 def compute_metrics(member, nonmember, threshold):
     TP = np.sum(member >= threshold)
     FN = np.sum(member < threshold)
@@ -58,9 +51,6 @@ def compute_metrics(member, nonmember, threshold):
     return acc, advantage, f1
 
 
-# -------------------------------------------------
-# Sweep thresholds and find best accuracy
-# -------------------------------------------------
 def find_best_threshold(member, nonmember, num_steps):
     thresholds = np.linspace(0, 1, num_steps)
 
@@ -82,10 +72,6 @@ def find_best_threshold(member, nonmember, num_steps):
 
     return best
 
-
-# -------------------------------------------------
-# Main analysis logic
-# -------------------------------------------------
 def main(args):
     print("=" * 80)
     print(
@@ -119,9 +105,6 @@ def main(args):
             )
 
 
-# -------------------------------------------------
-# Entry
-# -------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
